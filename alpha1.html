@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>课堂实时双语同传笔记</title>
+  <!-- 预留官方 Azure Speech SDK 注入 -->
+  <script src="https://cdn.jsdelivr.net/npm/microsoft-cognitiveservices-speech-sdk/distrib/browser/microsoft.cognitiveservices.speech.sdk.bundle.js"></script>
+  <style>
+    :root {
+      --bg-primary: #121418;
+      --bg-surface: #1a1e24;
+      --bg-subtle: #222730;
+      --border-color: #2e3642;
+      --text-main: #f0f3f6;
+      --text-secondary: #9da8b6;
+      --text-muted: #647082;
+      --accent-color: #3b82f6;
+      --accent-hover: #2563eb;
+      --accent-glow: rgba(59, 130, 246, 0.25);
+      --accent-zh: #38bdf8;
+      --tag-bg: rgba(59, 130, 246, 0.15);
+      --font-scale: 16px;
+      --font-en: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-zh: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: var(--bg-primary);
+      color: var(--text-main);
+      font-family: var(--font-zh);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      font-size: var(--font-scale);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* 顶部导航栏 */
+    header {
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-color);
+      padding: 10px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .brand-area {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-badge {
+      background: linear-gradient(135deg, #2563eb, #38bdf8);
+      color: #fff;
+      font-weight: 800;
+      font-size: 0.85rem;
+      padding: 4px 8px;
+      border-radius: 6px;
+      letter-spacing: 0.5px;
+    }
+
+    .brand-title {
+      font-weight: 600;
+      font-size: 1.05rem;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .session-badge {
+      font-size: 0.75rem;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-family: monospace;
+    }
+
+    /* 控制栏与快捷操作 */
+    .action-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 14px;
+      border-radius: 7px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.2s ease;
+      font-family: inherit;
+    }
+
+    .btn-primary {
+      background: var(--accent-color);
+      color: #fff;
+      box-shadow: 0 2px 6px var(--accent-glow);
+    }
+    .btn-primary:hover { background: var(--accent-hover); }
+
+    .btn-recording {
+      background: #dc2626 !important;
+      animation: pulse 1.6s infinite;
+    }
+
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.6); }
+      70% { box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+    }
+
+    .btn-secondary {
+      background: var(--bg-subtle);
+      color: var(--text-main);
+      border-color: var(--border-color);
+    }
+    .btn-secondary:hover {
+      background: #2b323e;
+      border-color: #3f4a5c;
+    }
+
+    /* 二级控制条：排版模式、字号、声波、搜索 */
+    .toolbar {
+      background: rgba(26, 30, 36, 0.75);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border-color);
+      padding: 8px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+
+    .tool-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .tool-label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    /* 视图切换按钮组 */
+    .view-switcher {
+      display: flex;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 2px;
+    }
+
+    .switch-tab {
+      padding: 4px 10px;
+      font-size: 0.8rem;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .switch-tab.active {
+      background: var(--accent-color);
+      color: #fff;
+      font-weight: 500;
+    }
+
+    /* 字号滑块 */
+    .slider-box {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+    }
+    .slider-box input[type="range"] {
+      width: 80px;
+      accent-color: var(--accent-color);
+    }
+
+    /* 搜索框 */
+    .search-input {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      width: 140px;
+      outline: none;
+    }
+    .search-input:focus { border-color: var(--accent-color); }
+
+    /* 音频波形指示条 */
+    #audio-canvas {
+      width: 70px;
+      height: 22px;
+      border-radius: 4px;
+      background: #111418;
+    }
+
+    /* 主内容视口 */
+    main {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      position: relative;
+    }
+
+    .content-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* 视图模式 1：双栏平行对照（默认最佳体验） */
+    .view-parallel .lecture-card {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      padding: 16px 20px;
+      border-radius: 10px;
+      transition: border-color 0.2s;
+    }
+
+    .view-parallel .lecture-card:hover {
+      border-color: #3e4a5c;
+    }
+
+    .col-source {
+      font-family: var(--font-en);
+      line-height: 1.6;
+      color: #cbd5e1;
+      font-size: 1em;
+      border-right: 1px solid #28303c;
+      padding-right: 18px;
+    }
+
+    .col-target {
+      font-family: var(--font-zh);
+      line-height: 1.65;
+      color: var(--accent-zh);
+      font-size: 1.05em;
+      font-weight: 450;
+      padding-left: 4px;
+    }
+
+    /* 视图模式 2：文档流模式（结构化论文笔记感） */
+    .view-doc .lecture-card {
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid #232934;
+      border-radius: 0;
+      padding: 14px 4px;
+    }
+
+    .view-doc .col-source {
+      font-family: var(--font-en);
+      color: var(--text-muted);
+      font-size: 0.95em;
+      border-right: none;
+      padding-right: 0;
+      margin-bottom: 6px;
+    }
+
+    .view-doc .col-target {
+      font-family: var(--font-zh);
+      color: var(--text-main);
+      font-size: 1.1em;
+      line-height: 1.7;
+    }
+
+    /* 临时流式未定稿样式（打字中） */
+    .card-interim {
+      opacity: 0.75;
+      border-style: dashed !important;
+      border-color: #3b82f6 !important;
+    }
+    .card-interim .col-source {
+      font-style: italic;
+    }
+
+    .timestamp {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: monospace;
+    }
+
+    /* 底部状态提示条 */
+    footer {
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border-color);
+      padding: 6px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #64748b;
+    }
+    .dot-active { background: #22c55e; }
+
+    /* 设置与服务商抽屉弹窗 */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 16px;
+    }
+    .modal-overlay.active { display: flex; }
+
+    .modal-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      width: 100%;
+      max-width: 520px;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 16px 36px rgba(0,0,0,0.5);
+    }
+
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-header h3 { font-size: 1rem; color: #fff; }
+    .close-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 1.2rem;
+      cursor: pointer;
+    }
+
+    .modal-body {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .form-group label {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+    .form-control {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      outline: none;
+      font-family: inherit;
+    }
+    .form-control:focus { border-color: var(--accent-color); }
+    .form-hint { font-size: 0.72rem; color: var(--text-muted); }
+
+    .modal-footer {
+      padding: 12px 20px;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    /* 移动端与平板分屏自适应 */
+    @media (max-width: 768px) {
+      .view-parallel .lecture-card {
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+      .col-source {
+        border-right: none;
+        border-bottom: 1px solid #28303c;
+        padding-right: 0;
+        padding-bottom: 8px;
+      }
+      .toolbar { gap: 8px; }
+      .search-input { width: 100px; }
+    }
+  </style>
+</head>
+<body class="view-parallel">
+
+  <!-- 顶部导航栏 -->
+  <header>
+    <div class="brand-area">
+      <span class="logo-badge">同传笔记</span>
+      <div class="brand-title">
+        课堂实时双语记要
+        <span class="session-badge" id="session-timer">00:00:00</span>
+      </div>
+    </div>
+
+    <div class="action-controls">
+      <button class="btn btn-secondary" id="demoBtn" title="无麦克风环境时预览效果">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        模拟讲座
+      </button>
+
+      <button class="btn btn-primary" id="recordBtn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        <span id="recordText">开启收音</span>
+      </button>
+
+      <button class="btn btn-secondary" id="configBtn" title="配置 API 与语音后端">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- 二级工具栏 -->
+  <div class="toolbar">
+    <!-- 排版模式切换 -->
+    <div class="tool-group">
+      <span class="tool-label">排版模式:</span>
+      <div class="view-switcher">
+        <button class="switch-tab active" data-mode="view-parallel">双栏对照</button>
+        <button class="switch-tab" data-mode="view-doc">连续文档</button>
+      </div>
+    </div>
+
+    <!-- 字号缩放调节 -->
+    <div class="tool-group">
+      <div class="slider-box">
+        <span class="tool-label">字号:</span>
+        <input type="range" id="fontSlider" min="13" max="22" value="16">
+        <span id="fontVal">16px</span>
+      </div>
+    </div>
+
+    <!-- 实时收音声波图 -->
+    <div class="tool-group">
+      <span class="tool-label">麦克风:</span>
+      <canvas id="audio-canvas"></canvas>
+    </div>
+
+    <!-- 检索与导出 -->
+    <div class="tool-group">
+      <input type="text" class="search-input" id="searchBox" placeholder="搜索课件/术语...">
+      <button class="btn btn-secondary" id="exportMdBtn" title="一键导出 Markdown 笔记本格式">导出 Markdown</button>
+      <button class="btn btn-secondary" id="clearBtn" title="清空当前记录">清空</button>
+    </div>
+  </div>
+
+  <!-- 主文本展示区 -->
+  <main id="mainScroller">
+    <div class="content-container" id="streamContainer">
+      <!-- 初始欢迎卡片 -->
+      <div class="lecture-card">
+        <div class="col-source">
+          <div class="timestamp">00:00:00 · 课件准备就绪</div>
+          Welcome to the lecture. Click "开启收音" above to start streaming from the lecture hall microphone, or click "模拟讲座" to preview the live experience.
+        </div>
+        <div class="col-target">
+          <div class="timestamp">状态提示</div>
+          欢迎进入课堂。点击上方的“开启收音”开始接收讲台麦克风，或点击“模拟讲座”按钮直接预览实时学术双语对照效果。
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- 底部状态指示条 -->
+  <footer>
+    <div class="status-indicator">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusLabel">引擎待命</span>
+    </div>
+    <div id="statsSummary">已记录: 1 句 · 字符数: 158</div>
+  </footer>
+
+  <!-- 后端引擎设置弹窗 -->
+  <div class="modal-overlay" id="configModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>引擎与云端接入配置</h3>
+        <button class="close-btn" id="closeModalBtn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>识别模式 / 后端通道</label>
+          <select class="form-control" id="providerSelect">
+            <option value="azure">Azure 语音翻译（学生免费额度极力推荐）</option>
+            <option value="webspeech">浏览器原生 Web Speech（零成本免 Key 体验）</option>
+            <option value="volcano">火山引擎（豆包同声传译 2.0 节点）</option>
+          </select>
+        </div>
+
+        <div id="azureConfigGroup">
+          <div class="form-group">
+            <label>Azure Speech 密钥 (Key)</label>
+            <input type="password" class="form-control" id="azureKey" placeholder="例如：a1b2c3d4e5f6...">
+            <span class="form-hint">在 Azure 控制台创建的 Speech 资源 Keys and Endpoint 处复制。</span>
+          </div>
+          <div class="form-group">
+            <label>节点区域 (Region)</label>
+            <input type="text" class="form-control" id="azureRegion" value="uksouth" placeholder="例如：uksouth, eastasia">
+          </div>
+        </div>
+
+        <div id="volcanoConfigGroup" style="display:none;">
+          <div class="form-group">
+            <label>火山引擎 AppID / Access Key</label>
+            <input type="text" class="form-control" id="volcKey" placeholder="填写火山引擎语音同传项目凭据">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelConfigBtn">取消</button>
+        <button class="btn btn-primary" id="saveConfigBtn">保存配置</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 状态管理
+    let isRecording = false;
+    let isSimulating = false;
+    let timerInterval = null;
+    let secondsElapsed = 0;
+    let recognizer = null;
+    let audioContext, analyser, microphone, dataArray;
+    let interimElement = null;
+
+    // DOM 元素引用
+    const recordBtn = document.getElementById('recordBtn');
+    const recordText = document.getElementById('recordText');
+    const demoBtn = document.getElementById('demoBtn');
+    const configBtn = document.getElementById('configBtn');
+    const configModal = document.getElementById('configModal');
+    const closeModalBtn = document.getElementById('closeModalBtn');
+    const saveConfigBtn = document.getElementById('saveConfigBtn');
+    const cancelConfigBtn = document.getElementById('cancelConfigBtn');
+    const streamContainer = document.getElementById('streamContainer');
+    const mainScroller = document.getElementById('mainScroller');
+    const sessionTimer = document.getElementById('session-timer');
+    const statusDot = document.getElementById('statusDot');
+    const statusLabel = document.getElementById('statusLabel');
+    const statsSummary = document.getElementById('statsSummary');
+    const fontSlider = document.getElementById('fontSlider');
+    const fontVal = document.getElementById('fontVal');
+    const searchBox = document.getElementById('searchBox');
+    const exportMdBtn = document.getElementById('exportMdBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const canvas = document.getElementById('audio-canvas');
+    const canvasCtx = canvas.getContext('2d');
+
+    // 讲座仿真文本库（精选学术级环境科学与气象系统范例）
+    const lectureSimulations = [
+      {
+        en: "Today we are analyzing the dynamics of radiative forcing and atmospheric aerosol-cloud interactions.",
+        zh: "今天我们将深入分析辐射强迫的动力学机制，以及大气气溶胶与云层相互作用。"
+      },
+      {
+        en: "Notice how sulfate aerosols increase the albedo of low-level stratocumulus clouds over marine boundaries.",
+        zh: "请注意硫酸盐气溶胶是如何显著增强海洋边界层上空低层层积云的反照率的。"
+      },
+      {
+        en: "Consequently, this indirect cooling effect partially offsets greenhouse gas induced warming anomalies.",
+        zh: "因此，这种间接冷却效应在局部抵消了温室气体引发的气温上升异常现象。"
+      },
+      {
+        en: "Furthermore, extreme wildfire cycles in regional ecosystems like Tasmania severely perturb local carbon sinks.",
+        zh: "此外，塔斯马尼亚等区域生态系统中的极端野火循环，极大地扰乱了当地的陆地碳汇稳定性。"
+      },
+      {
+        en: "Let us examine the feedback loop between seasonal El Niño oscillations and prolonged drought periods.",
+        zh: "接下来让我们重点考察季节性厄尔尼诺气候振荡与长期干旱期之间的正反馈回路。"
+      }
+    ];
+
+    // 初始化字号调节
+    fontSlider.addEventListener('input', (e) => {
+      const sz = e.target.value;
+      document.documentElement.style.setProperty('--font-scale', `${sz}px`);
+      fontVal.textContent = `${sz}px`;
+    });
+
+    // 排版模式切换（双栏对照 / 连续文档）
+    document.querySelectorAll('.switch-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.switch-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        document.body.className = tab.dataset.mode;
+      });
+    });
+
+    // 格式化时间戳
+    function formatTime(secs) {
+      const h = String(Math.floor(secs / 3600)).padStart(2, '0');
+      const m = String(Math.floor((secs % 3600) / 60)).padStart(2, '0');
+      const s = String(secs % 60).padStart(2, '0');
+      return `${h}:${m}:${s}`;
+    }
+
+    function startTimer() {
+      if (timerInterval) clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        secondsElapsed++;
+        sessionTimer.textContent = formatTime(secondsElapsed);
+      }, 1000);
+    }
+
+    function stopTimer() {
+      if (timerInterval) clearInterval(timerInterval);
+    }
+
+    // 实时麦克风波形绘制
+    function setupAudioVisualizer(stream) {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      analyser = audioContext.createAnalyser();
+      microphone = audioContext.createMediaStreamSource(stream);
+      microphone.connect(analyser);
+      analyser.fftSize = 32;
+      const bufferLength = analyser.frequencyBinCount;
+      dataArray = new Uint8Array(bufferLength);
+
+      function draw() {
+        if (!isRecording && !isSimulating) {
+          canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+          return;
+        }
+        requestAnimationFrame(draw);
+        analyser.getByteFrequencyData(dataArray);
+        canvasCtx.fillStyle = '#111418';
+        canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const barWidth = (canvas.width / bufferLength) * 1.5;
+        let x = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          const barHeight = (dataArray[i] / 255) * canvas.height;
+          canvasCtx.fillStyle = '#38bdf8';
+          canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+          x += barWidth + 2;
+        }
+      }
+      draw();
+    }
+
+    // 提交定稿卡片
+    function appendSentence(en, zh) {
+      if (interimElement) {
+        interimElement.remove();
+        interimElement = null;
+      }
+
+      const card = document.createElement('div');
+      card.className = 'lecture-card';
+      const curTime = formatTime(secondsElapsed);
+
+      card.innerHTML = `
+        <div class="col-source">
+          <div class="timestamp">${curTime} · 讲师原文</div>
+          ${en}
+        </div>
+        <div class="col-target">
+          <div class="timestamp">${curTime} · 实时译文</div>
+          ${zh}
+        </div>
+      `;
+
+      streamContainer.appendChild(card);
+      mainScroller.scrollTop = mainScroller.scrollHeight;
+      updateStatistics();
+    }
+
+    // 流式打字中（未定稿草稿态）
+    function updateInterim(en, zh = "正在翻译中...") {
+      if (!interimElement) {
+        interimElement = document.createElement('div');
+        interimElement.className = 'lecture-card card-interim';
+        streamContainer.appendChild(interimElement);
+      }
+      const curTime = formatTime(secondsElapsed);
+      interimElement.innerHTML = `
+        <div class="col-source">
+          <div class="timestamp">${curTime} · 实时流输入</div>
+          ${en}
+        </div>
+        <div class="col-target">
+          <div class="timestamp">${curTime} · 同传处理</div>
+          ${zh}
+        </div>
+      `;
+      mainScroller.scrollTop = mainScroller.scrollHeight;
+    }
+
+    function updateStatistics() {
+      const cards = streamContainer.querySelectorAll('.lecture-card:not(.card-interim)');
+      let totalChars = 0;
+      cards.forEach(c => totalChars += c.textContent.length);
+      statsSummary.textContent = `已记录: ${cards.length} 句 · 字符数: ${totalChars}`;
+    }
+
+    // 模拟讲座流演示
+    demoBtn.addEventListener('click', () => {
+      if (isSimulating) return;
+      if (isRecording) stopRecording();
+
+      isSimulating = true;
+      demoBtn.disabled = true;
+      statusDot.className = 'dot dot-active';
+      statusLabel.textContent = '讲座演示运行中';
+      startTimer();
+
+      let idx = 0;
+      function nextSentence() {
+        if (idx >= lectureSimulations.length || !isSimulating) {
+          isSimulating = false;
+          demoBtn.disabled = false;
+          statusDot.className = 'dot';
+          statusLabel.textContent = '讲座演示完成';
+          stopTimer();
+          return;
+        }
+
+        const item = lectureSimulations[idx];
+        const words = item.en.split(' ');
+        let curWord = 0;
+
+        const tokenTimer = setInterval(() => {
+          curWord++;
+          updateInterim(words.slice(0, curWord).join(' '));
+          if (curWord >= words.length) {
+            clearInterval(tokenTimer);
+            setTimeout(() => {
+              appendSentence(item.en, item.zh);
+              idx++;
+              setTimeout(nextSentence, 1200);
+            }, 400);
+          }
+        }, 120);
+      }
+      nextSentence();
+    });
+
+    // 录音与实时识别控制
+    recordBtn.addEventListener('click', async () => {
+      if (isRecording) {
+        stopRecording();
+      } else {
+        startRecording();
+      }
+    });
+
+    async function startRecording() {
+      const provider = document.getElementById('providerSelect').value;
+      const azureKey = localStorage.getItem('azure_speech_key');
+      const azureRegion = localStorage.getItem('azure_speech_region') || 'uksouth';
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        setupAudioVisualizer(stream);
+
+        if (provider === 'azure' && azureKey) {
+          // 初始化官方 Azure Speech SDK
+          const translationConfig = SpeechSDK.SpeechTranslationConfig.fromSubscription(azureKey, azureRegion);
+          translationConfig.speechRecognitionLanguage = "en-US";
+          translationConfig.addTargetLanguage("zh-Hans");
+
+          const audioConfig = SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
+          recognizer = new SpeechSDK.TranslationRecognizer(translationConfig, audioConfig);
+
+          recognizer.recognizing = (s, e) => {
+            const zh = e.result.translations.get("zh-Hans") || "...";
+            updateInterim(e.result.text, zh);
+          };
+
+          recognizer.recognized = (s, e) => {
+            if (e.result.text) {
+              const zh = e.result.translations.get("zh-Hans") || "";
+              appendSentence(e.result.text, zh);
+            }
+          };
+
+          recognizer.startContinuousRecognitionAsync(() => {
+            setRecordingUI(true);
+            statusLabel.textContent = 'Azure 云端实时翻译在线';
+          });
+
+        } else {
+          // 回退至本地 Web Speech API
+          const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+          if (!SpeechRecognition) {
+            alert('当前浏览器未开放 Web Speech，建议填入 Azure Key 或使用 Chrome/Edge 浏览器。');
+            return;
+          }
+          recognizer = new SpeechRecognition();
+          recognizer.continuous = true;
+          recognizer.interimResults = true;
+          recognizer.lang = 'en-US';
+
+          recognizer.onresult = (e) => {
+            let interim = '';
+            for (let i = e.resultIndex; i < e.results.length; ++i) {
+              if (e.results[i].isFinal) {
+                appendSentence(e.results[i][0].transcript, "（正在同步云端中文翻译...）");
+              } else {
+                interim += e.results[i][0].transcript;
+                updateInterim(interim);
+              }
+            }
+          };
+
+          recognizer.start();
+          setRecordingUI(true);
+          statusLabel.textContent = '浏览器原生听写中';
+        }
+      } catch (err) {
+        alert('无法访问麦克风: ' + err.message);
+      }
+    }
+
+    function stopRecording() {
+      if (recognizer) {
+        if (recognizer.stopContinuousRecognitionAsync) {
+          recognizer.stopContinuousRecognitionAsync();
+        } else if (recognizer.stop) {
+          recognizer.stop();
+        }
+        recognizer = null;
+      }
+      setRecordingUI(false);
+      statusLabel.textContent = '已暂停听写';
+    }
+
+    function setRecordingUI(active) {
+      isRecording = active;
+      if (active) {
+        recordBtn.classList.add('btn-recording');
+        recordText.textContent = '停止收音';
+        statusDot.className = 'dot dot-active';
+        startTimer();
+      } else {
+        recordBtn.classList.remove('btn-recording');
+        recordText.textContent = '开启收音';
+        statusDot.className = 'dot';
+        stopTimer();
+      }
+    }
+
+    // 实时检索过滤
+    searchBox.addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      const cards = streamContainer.querySelectorAll('.lecture-card');
+      cards.forEach(card => {
+        const text = card.textContent.toLowerCase();
+        card.style.display = text.includes(q) ? '' : 'none';
+      });
+    });
+
+    // 一键导出 Markdown
+    exportMdBtn.addEventListener('click', () => {
+      const cards = streamContainer.querySelectorAll('.lecture-card:not(.card-interim)');
+      let md = `# 课堂实时讲座笔记\n记录日期: ${new Date().toLocaleDateString('zh-CN')}\n时长: ${sessionTimer.textContent}\n\n---\n\n`;
+
+      cards.forEach((card, idx) => {
+        const en = card.querySelector('.col-source')?.innerText.replace(/^[^\n]*\n/, '') || '';
+        const zh = card.querySelector('.col-target')?.innerText.replace(/^[^\n]*\n/, '') || '';
+        if (en.trim()) {
+          md += `### 第 ${idx + 1} 节\n**英文原文**: ${en.trim()}\n\n**中文翻译**: ${zh.trim()}\n\n`;
+        }
+      });
+
+      const blob = new Blob([md], { type: 'text/markdown;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `课堂讲座笔记_${new Date().toISOString().slice(0,10)}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    // 清空当前记录
+    clearBtn.addEventListener('click', () => {
+      if (confirm('确认清空当前的课堂记录吗？')) {
+        streamContainer.innerHTML = '';
+        secondsElapsed = 0;
+        sessionTimer.textContent = '00:00:00';
+        updateStatistics();
+      }
+    });
+
+    // 设置弹窗逻辑
+    configBtn.addEventListener('click', () => {
+      document.getElementById('azureKey').value = localStorage.getItem('azure_speech_key') || '';
+      document.getElementById('azureRegion').value = localStorage.getItem('azure_speech_region') || 'uksouth';
+      configModal.classList.add('active');
+    });
+
+    closeModalBtn.addEventListener('click', () => configModal.classList.remove('active'));
+    cancelConfigBtn.addEventListener('click', () => configModal.classList.remove('active'));
+
+    saveConfigBtn.addEventListener('click', () => {
+      const k = document.getElementById('azureKey').value.trim();
+      const r = document.getElementById('azureRegion').value.trim();
+      if (k) localStorage.setItem('azure_speech_key', k);
+      if (r) localStorage.setItem('azure_speech_region', r);
+      configModal.classList.remove('active');
+      alert('配置已成功保存在本地存储！');
+    });
+  </script>
+</body>
+</html>
