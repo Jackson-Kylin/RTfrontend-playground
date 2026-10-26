@@ -1,958 +1,528 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>课堂实时双语同传笔记</title>
-  <!-- 预留官方 Azure Speech SDK 注入 -->
-  <script src="https://cdn.jsdelivr.net/npm/microsoft-cognitiveservices-speech-sdk/distrib/browser/microsoft.cognitiveservices.speech.sdk.bundle.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>实时双语同传 2.0 | Live Simultaneous Interpretation</title>
+  <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    :root {
-      --bg-primary: #121418;
-      --bg-surface: #1a1e24;
-      --bg-subtle: #222730;
-      --border-color: #2e3642;
-      --text-main: #f0f3f6;
-      --text-secondary: #9da8b6;
-      --text-muted: #647082;
-      --accent-color: #3b82f6;
-      --accent-hover: #2563eb;
-      --accent-glow: rgba(59, 130, 246, 0.25);
-      --accent-zh: #38bdf8;
-      --tag-bg: rgba(59, 130, 246, 0.15);
-      --font-scale: 16px;
-      --font-en: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      --font-zh: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-    }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      background-color: var(--bg-primary);
-      color: var(--text-main);
-      font-family: var(--font-zh);
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      font-size: var(--font-scale);
-      -webkit-font-smoothing: antialiased;
-    }
-
-    /* 顶部导航栏 */
-    header {
-      background: var(--bg-surface);
-      border-bottom: 1px solid var(--border-color);
-      padding: 10px 18px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      flex-shrink: 0;
-    }
-
-    .brand-area {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .logo-badge {
-      background: linear-gradient(135deg, #2563eb, #38bdf8);
-      color: #fff;
-      font-weight: 800;
-      font-size: 0.85rem;
-      padding: 4px 8px;
-      border-radius: 6px;
-      letter-spacing: 0.5px;
-    }
-
-    .brand-title {
-      font-weight: 600;
-      font-size: 1.05rem;
-      color: #fff;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .session-badge {
-      font-size: 0.75rem;
-      background: var(--bg-subtle);
-      border: 1px solid var(--border-color);
-      color: var(--text-secondary);
-      padding: 2px 8px;
-      border-radius: 12px;
-      font-family: monospace;
-    }
-
-    /* 控制栏与快捷操作 */
-    .action-controls {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 7px 14px;
-      border-radius: 7px;
-      font-size: 0.85rem;
-      font-weight: 500;
-      cursor: pointer;
-      border: 1px solid transparent;
-      transition: all 0.2s ease;
-      font-family: inherit;
-    }
-
-    .btn-primary {
-      background: var(--accent-color);
-      color: #fff;
-      box-shadow: 0 2px 6px var(--accent-glow);
-    }
-    .btn-primary:hover { background: var(--accent-hover); }
-
-    .btn-recording {
-      background: #dc2626 !important;
-      animation: pulse 1.6s infinite;
-    }
-
-    @keyframes pulse {
-      0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.6); }
-      70% { box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); }
-      100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
-    }
-
-    .btn-secondary {
-      background: var(--bg-subtle);
-      color: var(--text-main);
-      border-color: var(--border-color);
-    }
-    .btn-secondary:hover {
-      background: #2b323e;
-      border-color: #3f4a5c;
-    }
-
-    /* 二级控制条：排版模式、字号、声波、搜索 */
-    .toolbar {
-      background: rgba(26, 30, 36, 0.75);
-      backdrop-filter: blur(8px);
-      border-bottom: 1px solid var(--border-color);
-      padding: 8px 18px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 14px;
-      flex-shrink: 0;
-      flex-wrap: wrap;
-    }
-
-    .tool-group {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .tool-label {
-      font-size: 0.8rem;
-      color: var(--text-muted);
-    }
-
-    /* 视图切换按钮组 */
-    .view-switcher {
-      display: flex;
-      background: var(--bg-subtle);
-      border: 1px solid var(--border-color);
-      border-radius: 6px;
-      padding: 2px;
-    }
-
-    .switch-tab {
-      padding: 4px 10px;
-      font-size: 0.8rem;
-      border: none;
-      background: transparent;
-      color: var(--text-secondary);
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    .switch-tab.active {
-      background: var(--accent-color);
-      color: #fff;
-      font-weight: 500;
-    }
-
-    /* 字号滑块 */
-    .slider-box {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 0.8rem;
-      color: var(--text-secondary);
-    }
-    .slider-box input[type="range"] {
-      width: 80px;
-      accent-color: var(--accent-color);
-    }
-
-    /* 搜索框 */
-    .search-input {
-      background: var(--bg-subtle);
-      border: 1px solid var(--border-color);
-      color: var(--text-main);
-      padding: 5px 10px;
-      border-radius: 6px;
-      font-size: 0.8rem;
-      width: 140px;
-      outline: none;
-    }
-    .search-input:focus { border-color: var(--accent-color); }
-
-    /* 音频波形指示条 */
-    #audio-canvas {
-      width: 70px;
-      height: 22px;
-      border-radius: 4px;
-      background: #111418;
-    }
-
-    /* 主内容视口 */
-    main {
-      flex: 1;
-      overflow-y: auto;
-      padding: 20px;
-      position: relative;
-    }
-
-    .content-container {
-      max-width: 1200px;
-      margin: 0 auto;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    /* 视图模式 1：双栏平行对照（默认最佳体验） */
-    .view-parallel .lecture-card {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
-      background: var(--bg-surface);
-      border: 1px solid var(--border-color);
-      padding: 16px 20px;
-      border-radius: 10px;
-      transition: border-color 0.2s;
-    }
-
-    .view-parallel .lecture-card:hover {
-      border-color: #3e4a5c;
-    }
-
-    .col-source {
-      font-family: var(--font-en);
-      line-height: 1.6;
-      color: #cbd5e1;
-      font-size: 1em;
-      border-right: 1px solid #28303c;
-      padding-right: 18px;
-    }
-
-    .col-target {
-      font-family: var(--font-zh);
-      line-height: 1.65;
-      color: var(--accent-zh);
-      font-size: 1.05em;
-      font-weight: 450;
-      padding-left: 4px;
-    }
-
-    /* 视图模式 2：文档流模式（结构化论文笔记感） */
-    .view-doc .lecture-card {
-      background: transparent;
-      border: none;
-      border-bottom: 1px solid #232934;
-      border-radius: 0;
-      padding: 14px 4px;
-    }
-
-    .view-doc .col-source {
-      font-family: var(--font-en);
-      color: var(--text-muted);
-      font-size: 0.95em;
-      border-right: none;
-      padding-right: 0;
-      margin-bottom: 6px;
-    }
-
-    .view-doc .col-target {
-      font-family: var(--font-zh);
-      color: var(--text-main);
-      font-size: 1.1em;
-      line-height: 1.7;
-    }
-
-    /* 临时流式未定稿样式（打字中） */
-    .card-interim {
-      opacity: 0.75;
-      border-style: dashed !important;
-      border-color: #3b82f6 !important;
-    }
-    .card-interim .col-source {
-      font-style: italic;
-    }
-
-    .timestamp {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      margin-bottom: 6px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-family: monospace;
-    }
-
-    /* 底部状态提示条 */
-    footer {
-      background: var(--bg-surface);
-      border-top: 1px solid var(--border-color);
-      padding: 6px 18px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      flex-shrink: 0;
-    }
-
-    .status-indicator {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: #64748b;
-    }
-    .dot-active { background: #22c55e; }
-
-    /* 设置与服务商抽屉弹窗 */
-    .modal-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.75);
-      backdrop-filter: blur(4px);
-      display: none;
-      align-items: center;
-      justify-content: center;
-      z-index: 100;
-      padding: 16px;
-    }
-    .modal-overlay.active { display: flex; }
-
-    .modal-card {
-      background: var(--bg-surface);
-      border: 1px solid var(--border-color);
-      width: 100%;
-      max-width: 520px;
-      border-radius: 12px;
-      overflow: hidden;
-      box-shadow: 0 16px 36px rgba(0,0,0,0.5);
-    }
-
-    .modal-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border-color);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .modal-header h3 { font-size: 1rem; color: #fff; }
-    .close-btn {
-      background: transparent;
-      border: none;
-      color: var(--text-muted);
-      font-size: 1.2rem;
-      cursor: pointer;
-    }
-
-    .modal-body {
-      padding: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    .form-group {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-    .form-group label {
-      font-size: 0.8rem;
-      color: var(--text-secondary);
-      font-weight: 500;
-    }
-    .form-control {
-      background: var(--bg-subtle);
-      border: 1px solid var(--border-color);
-      color: var(--text-main);
-      padding: 8px 12px;
-      border-radius: 6px;
-      font-size: 0.85rem;
-      outline: none;
-      font-family: inherit;
-    }
-    .form-control:focus { border-color: var(--accent-color); }
-    .form-hint { font-size: 0.72rem; color: var(--text-muted); }
-
-    .modal-footer {
-      padding: 12px 20px;
-      border-top: 1px solid var(--border-color);
-      display: flex;
-      justify-content: flex-end;
-      gap: 10px;
-    }
-
-    /* 移动端与平板分屏自适应 */
-    @media (max-width: 768px) {
-      .view-parallel .lecture-card {
-        grid-template-columns: 1fr;
-        gap: 10px;
-      }
-      .col-source {
-        border-right: none;
-        border-bottom: 1px solid #28303c;
-        padding-right: 0;
-        padding-bottom: 8px;
-      }
-      .toolbar { gap: 8px; }
-      .search-input { width: 100px; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    .pulse-ring { animation: pulseRing 1.4s infinite; }
+    @keyframes pulseRing {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.35; transform: scale(1.2); }
     }
   </style>
 </head>
-<body class="view-parallel">
+<body class="bg-slate-950 text-slate-100 h-screen flex flex-col overflow-hidden font-sans">
 
-  <!-- 顶部导航栏 -->
-  <header>
-    <div class="brand-area">
-      <span class="logo-badge">同传笔记</span>
-      <div class="brand-title">
-        课堂实时双语记要
-        <span class="session-badge" id="session-timer">00:00:00</span>
-      </div>
+  <!-- 顶部栏 -->
+  <header class="bg-slate-900 border-b border-slate-800 px-6 py-3.5 flex flex-wrap items-center justify-between gap-4 shrink-0">
+    <div class="flex items-center gap-3">
+      <div id="statusDot" class="w-3 h-3 rounded-full bg-slate-600"></div>
+      <h1 class="text-base md:text-lg font-semibold tracking-wide text-white">实时双语同传工作台</h1>
+      <span id="providerBadge" class="text-xs px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-mono">
+        火山引擎 · 同声传译 2.0
+      </span>
     </div>
 
-    <div class="action-controls">
-      <button class="btn btn-secondary" id="demoBtn" title="无麦克风环境时预览效果">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        模拟讲座
+    <div class="flex flex-wrap items-center gap-2.5">
+      <!-- 源语言 -->
+      <div class="flex items-center bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 text-xs">
+        <span class="text-slate-400 mr-1.5">源语言:</span>
+        <select id="sourceLang" class="bg-transparent text-slate-100 focus:outline-none">
+          <option value="en" data-speech="en-GB" selected>英语 (en)</option>
+          <option value="zh" data-speech="zh-CN">中文 (zh)</option>
+          <option value="ja" data-speech="ja-JP">日语 (ja)</option>
+        </select>
+      </div>
+
+      <span class="text-slate-500 text-xs">➔</span>
+
+      <!-- 目标语言 -->
+      <div class="flex items-center bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 text-xs">
+        <span class="text-slate-400 mr-1.5">目标语言:</span>
+        <select id="targetLang" class="bg-transparent text-slate-100 focus:outline-none">
+          <option value="zh" selected>简体中文 (zh)</option>
+          <option value="en">English (en)</option>
+        </select>
+      </div>
+
+      <!-- 录音/同传开关 -->
+      <button id="toggleRecBtn" onclick="toggleInterpretation()" class="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-1.5 rounded-lg transition shadow">
+        <span id="recBtnText">开启同传</span>
       </button>
 
-      <button class="btn btn-primary" id="recordBtn">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-        <span id="recordText">开启收音</span>
+      <!-- 导出 Markdown -->
+      <button onclick="exportMarkdown()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm px-3 py-1.5 rounded-lg border border-slate-700 transition">
+        导出记录
       </button>
 
-      <button class="btn btn-secondary" id="configBtn" title="配置 API 与语音后端">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <!-- 清空 -->
+      <button onclick="clearAll()" class="bg-slate-800 hover:bg-rose-600/80 text-slate-300 hover:text-white text-sm px-3 py-1.5 rounded-lg border border-slate-700 transition">
+        清空
+      </button>
+
+      <!-- 接口设置 -->
+      <button onclick="openSettings()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-3.5 py-1.5 rounded-lg transition">
+        ⚙️ 接口配置
       </button>
     </div>
   </header>
 
-  <!-- 二级工具栏 -->
-  <div class="toolbar">
-    <!-- 排版模式切换 -->
-    <div class="tool-group">
-      <span class="tool-label">排版模式:</span>
-      <div class="view-switcher">
-        <button class="switch-tab active" data-mode="view-parallel">双栏对照</button>
-        <button class="switch-tab" data-mode="view-doc">连续文档</button>
-      </div>
+  <!-- 实时流状态条 -->
+  <div class="bg-slate-900/60 border-b border-slate-800/80 px-6 py-2 flex items-center justify-between text-xs shrink-0">
+    <div class="flex items-center gap-2.5 truncate">
+      <span id="modeTag" class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">待机中</span>
+      <span id="streamPreview" class="text-slate-400 italic truncate">点击右上角「开启同传」开始实时收音与同传...</span>
     </div>
-
-    <!-- 字号缩放调节 -->
-    <div class="tool-group">
-      <div class="slider-box">
-        <span class="tool-label">字号:</span>
-        <input type="range" id="fontSlider" min="13" max="22" value="16">
-        <span id="fontVal">16px</span>
-      </div>
-    </div>
-
-    <!-- 实时收音声波图 -->
-    <div class="tool-group">
-      <span class="tool-label">麦克风:</span>
-      <canvas id="audio-canvas"></canvas>
-    </div>
-
-    <!-- 检索与导出 -->
-    <div class="tool-group">
-      <input type="text" class="search-input" id="searchBox" placeholder="搜索课件/术语...">
-      <button class="btn btn-secondary" id="exportMdBtn" title="一键导出 Markdown 笔记本格式">导出 Markdown</button>
-      <button class="btn btn-secondary" id="clearBtn" title="清空当前记录">清空</button>
-    </div>
+    <span id="latencyBadge" class="text-slate-500 font-mono shrink-0">延迟: -- ms</span>
   </div>
 
-  <!-- 主文本展示区 -->
-  <main id="mainScroller">
-    <div class="content-container" id="streamContainer">
-      <!-- 初始欢迎卡片 -->
-      <div class="lecture-card">
-        <div class="col-source">
-          <div class="timestamp">00:00:00 · 课件准备就绪</div>
-          Welcome to the lecture. Click "开启收音" above to start streaming from the lecture hall microphone, or click "模拟讲座" to preview the live experience.
-        </div>
-        <div class="col-target">
-          <div class="timestamp">状态提示</div>
-          欢迎进入课堂。点击上方的“开启收音”开始接收讲台麦克风，或点击“模拟讲座”按钮直接预览实时学术双语对照效果。
-        </div>
+  <!-- 双栏同传显示区 -->
+  <main class="flex-1 grid grid-cols-1 md:grid-cols-2 overflow-hidden divide-y md:divide-y-0 md:divide-x divide-slate-800">
+    <!-- 左栏：实时原文 (ASR) -->
+    <section class="flex flex-col h-full overflow-hidden bg-slate-950">
+      <div class="px-6 py-2.5 bg-slate-900/40 border-b border-slate-800/80 flex justify-between items-center text-xs font-semibold text-slate-400 uppercase tracking-wider">
+        <span>实时识别原文 (Source ASR)</span>
+        <span id="sentenceCount">0 句</span>
       </div>
-    </div>
+      <div id="sourceList" class="flex-1 overflow-y-auto p-6 space-y-3.5"></div>
+    </section>
+
+    <!-- 右栏：实时同传译文 (Translation) -->
+    <section class="flex flex-col h-full overflow-hidden bg-slate-900/20">
+      <div class="px-6 py-2.5 bg-slate-900/40 border-b border-slate-800/80 flex justify-between items-center text-xs font-semibold text-slate-400 uppercase tracking-wider">
+        <span>同声传译结果 (Target Stream)</span>
+        <span id="engineInfo" class="font-mono text-slate-500">volc-si-2.0</span>
+      </div>
+      <div id="targetList" class="flex-1 overflow-y-auto p-6 space-y-3.5"></div>
+    </section>
   </main>
 
-  <!-- 底部状态指示条 -->
-  <footer>
-    <div class="status-indicator">
-      <span class="dot" id="statusDot"></span>
-      <span id="statusLabel">引擎待命</span>
-    </div>
-    <div id="statsSummary">已记录: 1 句 · 字符数: 158</div>
+  <!-- 底部调试/直传输入栏 -->
+  <footer class="bg-slate-900 border-t border-slate-800 px-6 py-2.5 flex gap-3 shrink-0">
+    <input id="quickInput" type="text" placeholder="直接输入外文句子按回车，测试当前同传/翻译 API 连通性..." 
+      class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-4 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
+      onkeydown="if(event.key==='Enter') triggerManualTranslate()" />
+    <button onclick="triggerManualTranslate()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-1.5 rounded-lg transition">
+      直传测试
+    </button>
   </footer>
 
-  <!-- 后端引擎设置弹窗 -->
-  <div class="modal-overlay" id="configModal">
-    <div class="modal-card">
-      <div class="modal-header">
-        <h3>引擎与云端接入配置</h3>
-        <button class="close-btn" id="closeModalBtn">&times;</button>
+  <!-- 接口配置弹窗（动态适配不同模型，同传 2.0 绝无提示词框） -->
+  <div id="settingsModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+      <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+        <h2 class="text-base font-semibold text-white">配置同传 / 翻译接口</h2>
+        <button onclick="closeSettings()" class="text-slate-400 hover:text-white text-xl leading-none">&times;</button>
       </div>
-      <div class="modal-body">
-        <div class="form-group">
-          <label>识别模式 / 后端通道</label>
-          <select class="form-control" id="providerSelect">
-            <option value="azure">Azure 语音翻译（学生免费额度极力推荐）</option>
-            <option value="webspeech">浏览器原生 Web Speech（零成本免 Key 体验）</option>
-            <option value="volcano">火山引擎（豆包同声传译 2.0 节点）</option>
-          </select>
-        </div>
 
-        <div id="azureConfigGroup">
-          <div class="form-group">
-            <label>Azure Speech 密钥 (Key)</label>
-            <input type="password" class="form-control" id="azureKey" placeholder="例如：a1b2c3d4e5f6...">
-            <span class="form-hint">在 Azure 控制台创建的 Speech 资源 Keys and Endpoint 处复制。</span>
-          </div>
-          <div class="form-group">
-            <label>节点区域 (Region)</label>
-            <input type="text" class="form-control" id="azureRegion" value="uksouth" placeholder="例如：uksouth, eastasia">
-          </div>
-        </div>
-
-        <div id="volcanoConfigGroup" style="display:none;">
-          <div class="form-group">
-            <label>火山引擎 AppID / Access Key</label>
-            <input type="text" class="form-control" id="volcKey" placeholder="填写火山引擎语音同传项目凭据">
-          </div>
-        </div>
+      <!-- 接口类型选择 -->
+      <div>
+        <label class="block text-xs font-medium text-slate-300 mb-1.5">选择接口引擎 (自动匹配专属参数)</label>
+        <select id="providerSelect" onchange="renderConfigForm()" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+          <option value="volc_si2">火山引擎 · 同声传译 2.0 (专用同传接口 / 无提示词)</option>
+          <option value="aliyun_mt">阿里云百炼 · 专用翻译 Qwen-MT (无提示词)</option>
+          <option value="openai">OpenAI 官方接口 (GPT-4o-mini / GPT-4o)</option>
+          <option value="deepseek">DeepSeek 接口 (deepseek-chat)</option>
+        </select>
       </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" id="cancelConfigBtn">取消</button>
-        <button class="btn btn-primary" id="saveConfigBtn">保存配置</button>
+
+      <!-- 动态表单渲染区 -->
+      <div id="dynamicFields" class="space-y-3.5"></div>
+
+      <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-400 leading-relaxed">
+        🔒 密钥仅保存在本地浏览器 <code>localStorage</code> 中，不会上传至 GitHub。
+      </div>
+
+      <div class="flex justify-end gap-3 pt-2">
+        <button onclick="closeSettings()" class="px-4 py-1.5 rounded-lg text-sm bg-slate-800 hover:bg-slate-700 text-slate-300 transition">取消</button>
+        <button onclick="saveSettings()" class="px-5 py-1.5 rounded-lg text-sm bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition">保存生效</button>
       </div>
     </div>
   </div>
 
   <script>
-    // 状态管理
-    let isRecording = false;
-    let isSimulating = false;
-    let timerInterval = null;
-    let secondsElapsed = 0;
-    let recognizer = null;
-    let audioContext, analyser, microphone, dataArray;
-    let interimElement = null;
-
-    // DOM 元素引用
-    const recordBtn = document.getElementById('recordBtn');
-    const recordText = document.getElementById('recordText');
-    const demoBtn = document.getElementById('demoBtn');
-    const configBtn = document.getElementById('configBtn');
-    const configModal = document.getElementById('configModal');
-    const closeModalBtn = document.getElementById('closeModalBtn');
-    const saveConfigBtn = document.getElementById('saveConfigBtn');
-    const cancelConfigBtn = document.getElementById('cancelConfigBtn');
-    const streamContainer = document.getElementById('streamContainer');
-    const mainScroller = document.getElementById('mainScroller');
-    const sessionTimer = document.getElementById('session-timer');
-    const statusDot = document.getElementById('statusDot');
-    const statusLabel = document.getElementById('statusLabel');
-    const statsSummary = document.getElementById('statsSummary');
-    const fontSlider = document.getElementById('fontSlider');
-    const fontVal = document.getElementById('fontVal');
-    const searchBox = document.getElementById('searchBox');
-    const exportMdBtn = document.getElementById('exportMdBtn');
-    const clearBtn = document.getElementById('clearBtn');
-    const canvas = document.getElementById('audio-canvas');
-    const canvasCtx = canvas.getContext('2d');
-
-    // 讲座仿真文本库（精选学术级环境科学与气象系统范例）
-    const lectureSimulations = [
-      {
-        en: "Today we are analyzing the dynamics of radiative forcing and atmospheric aerosol-cloud interactions.",
-        zh: "今天我们将深入分析辐射强迫的动力学机制，以及大气气溶胶与云层相互作用。"
+    // 不同服务商的专属配置规范（区分「无提示词专用同传/翻译接口」与「通用接口」）
+    const PROVIDERS = {
+      volc_si2: {
+        name: '火山引擎 · 同传 2.0',
+        type: 'dedicated_si', // 专用同传，无 Prompt
+        fields: [
+          { key: 'apiKey', label: 'API Key (x-api-key / Bearer Key)', type: 'password', placeholder: '填入火山引擎同传 2.0 的 API Key' },
+          { key: 'resourceId', label: '服务资源 ID (Resource ID)', type: 'text', default: 'volc.service_type.10053', placeholder: '默认: volc.service_type.10053 (同传2.0)' },
+          { key: 'endpoint', label: '同传接口地址 (WebSocket / HTTP Endpoint)', type: 'text', default: 'wss://openspeech.bytedance.com/api/v3/sauc/bigmodel', placeholder: '填入火山同传 2.0 接入地址或本地代理地址' },
+          { key: 'model', label: '模型标识 / 接入点 (选填)', type: 'text', default: 'doubao-simultaneous-2.0', placeholder: '若使用方舟接入点可填 ep-xxxx' }
+        ],
+        hint: '火山同声传译 2.0 直接通过源语言(source_language)与目标语言(target_language)参数驱动，无需任何提示词。'
       },
-      {
-        en: "Notice how sulfate aerosols increase the albedo of low-level stratocumulus clouds over marine boundaries.",
-        zh: "请注意硫酸盐气溶胶是如何显著增强海洋边界层上空低层层积云的反照率的。"
+      aliyun_mt: {
+        name: '阿里云 · Qwen-MT 专用翻译',
+        type: 'dedicated_mt', // 专用翻译模型，通过 translation_options 传语言，无 Prompt
+        fields: [
+          { key: 'apiKey', label: '阿里云百炼 API Key', type: 'password', placeholder: 'sk-xxxxxxxxxxxxxxxxxxxxxxxx' },
+          { key: 'model', label: '专用翻译模型名称', type: 'text', default: 'qwen-mt-turbo', placeholder: 'qwen-mt-turbo 或 qwen-mt-plus' },
+          { key: 'endpoint', label: '接口地址', type: 'text', default: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', placeholder: '' }
+        ],
+        hint: '阿里云 Qwen-MT 为专用机器翻译模型，直接通过 translation_options 指定源语言和目标语言，不使用系统提示词。'
       },
-      {
-        en: "Consequently, this indirect cooling effect partially offsets greenhouse gas induced warming anomalies.",
-        zh: "因此，这种间接冷却效应在局部抵消了温室气体引发的气温上升异常现象。"
+      openai: {
+        name: 'OpenAI',
+        type: 'general_llm',
+        fields: [
+          { key: 'apiKey', label: 'OpenAI API Key', type: 'password', placeholder: 'sk-proj-xxxxxxxxxxxxxxxx' },
+          { key: 'model', label: '模型名称', type: 'text', default: 'gpt-4o-mini', placeholder: 'gpt-4o-mini / gpt-4o' },
+          { key: 'endpoint', label: 'Endpoint URL', type: 'text', default: 'https://api.openai.com/v1/chat/completions', placeholder: '' }
+        ],
+        hint: 'OpenAI 通用接口，由系统自动按顶部选择的语言组装翻译指令。'
       },
-      {
-        en: "Furthermore, extreme wildfire cycles in regional ecosystems like Tasmania severely perturb local carbon sinks.",
-        zh: "此外，塔斯马尼亚等区域生态系统中的极端野火循环，极大地扰乱了当地的陆地碳汇稳定性。"
-      },
-      {
-        en: "Let us examine the feedback loop between seasonal El Niño oscillations and prolonged drought periods.",
-        zh: "接下来让我们重点考察季节性厄尔尼诺气候振荡与长期干旱期之间的正反馈回路。"
+      deepseek: {
+        name: 'DeepSeek',
+        type: 'general_llm',
+        fields: [
+          { key: 'apiKey', label: 'DeepSeek API Key', type: 'password', placeholder: 'sk-xxxxxxxxxxxxxxxxxxxxxxxx' },
+          { key: 'model', label: '模型名称', type: 'text', default: 'deepseek-chat', placeholder: 'deepseek-chat' },
+          { key: 'endpoint', label: 'Endpoint URL', type: 'text', default: 'https://api.deepseek.com/chat/completions', placeholder: '' }
+        ],
+        hint: 'DeepSeek 官方接口，自动根据顶部语言栏执行直译。'
       }
-    ];
+    };
 
-    // 初始化字号调节
-    fontSlider.addEventListener('input', (e) => {
-      const sz = e.target.value;
-      document.documentElement.style.setProperty('--font-scale', `${sz}px`);
-      fontVal.textContent = `${sz}px`;
-    });
+    let state = {
+      provider: localStorage.getItem('si_provider') || 'volc_si2',
+      configs: JSON.parse(localStorage.getItem('si_configs') || '{}'),
+      isRunning: false,
+      recognition: null,
+      ws: null,
+      records: []
+    };
 
-    // 排版模式切换（双栏对照 / 连续文档）
-    document.querySelectorAll('.switch-tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        document.querySelectorAll('.switch-tab').forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        document.body.className = tab.dataset.mode;
+    // 初始化默认参数
+    Object.keys(PROVIDERS).forEach(pKey => {
+      if (!state.configs[pKey]) state.configs[pKey] = {};
+      PROVIDERS[pKey].fields.forEach(f => {
+        if (state.configs[pKey][f.key] === undefined && f.default) {
+          state.configs[pKey][f.key] = f.default;
+        }
       });
     });
 
-    // 格式化时间戳
-    function formatTime(secs) {
-      const h = String(Math.floor(secs / 3600)).padStart(2, '0');
-      const m = String(Math.floor((secs % 3600) / 60)).padStart(2, '0');
-      const s = String(secs % 60).padStart(2, '0');
-      return `${h}:${m}:${s}`;
+    function init() {
+      updateBadges();
+      initBrowserASR();
     }
 
-    function startTimer() {
-      if (timerInterval) clearInterval(timerInterval);
-      timerInterval = setInterval(() => {
-        secondsElapsed++;
-        sessionTimer.textContent = formatTime(secondsElapsed);
-      }, 1000);
+    function updateBadges() {
+      const p = PROVIDERS[state.provider];
+      const cfg = state.configs[state.provider] || {};
+      document.getElementById('providerBadge').textContent = p.name;
+      document.getElementById('engineInfo').textContent = cfg.model || cfg.resourceId || state.provider;
     }
 
-    function stopTimer() {
-      if (timerInterval) clearInterval(timerInterval);
+    // 弹窗与动态表单
+    function openSettings() {
+      document.getElementById('providerSelect').value = state.provider;
+      renderConfigForm();
+      document.getElementById('settingsModal').classList.remove('hidden');
+      document.getElementById('settingsModal').classList.add('flex');
     }
 
-    // 实时麦克风波形绘制
-    function setupAudioVisualizer(stream) {
-      audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      analyser = audioContext.createAnalyser();
-      microphone = audioContext.createMediaStreamSource(stream);
-      microphone.connect(analyser);
-      analyser.fftSize = 32;
-      const bufferLength = analyser.frequencyBinCount;
-      dataArray = new Uint8Array(bufferLength);
-
-      function draw() {
-        if (!isRecording && !isSimulating) {
-          canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-          return;
-        }
-        requestAnimationFrame(draw);
-        analyser.getByteFrequencyData(dataArray);
-        canvasCtx.fillStyle = '#111418';
-        canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
-
-        const barWidth = (canvas.width / bufferLength) * 1.5;
-        let x = 0;
-        for (let i = 0; i < bufferLength; i++) {
-          const barHeight = (dataArray[i] / 255) * canvas.height;
-          canvasCtx.fillStyle = '#38bdf8';
-          canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
-          x += barWidth + 2;
-        }
-      }
-      draw();
+    function closeSettings() {
+      document.getElementById('settingsModal').classList.add('hidden');
+      document.getElementById('settingsModal').classList.remove('flex');
     }
 
-    // 提交定稿卡片
-    function appendSentence(en, zh) {
-      if (interimElement) {
-        interimElement.remove();
-        interimElement = null;
-      }
+    function renderConfigForm() {
+      const pKey = document.getElementById('providerSelect').value;
+      const spec = PROVIDERS[pKey];
+      const saved = state.configs[pKey] || {};
+      const container = document.getElementById('dynamicFields');
 
-      const card = document.createElement('div');
-      card.className = 'lecture-card';
-      const curTime = formatTime(secondsElapsed);
+      let html = '';
+      spec.fields.forEach(f => {
+        const val = saved[f.key] !== undefined ? saved[f.key] : (f.default || '');
+        html += `
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1">${f.label}</label>
+            <input id="field_${f.key}" type="${f.type}" value="${escapeAttr(val)}" placeholder="${f.placeholder || ''}"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-xs text-white font-mono focus:outline-none focus:border-indigo-500" />
+          </div>
+        `;
+      });
 
-      card.innerHTML = `
-        <div class="col-source">
-          <div class="timestamp">${curTime} · 讲师原文</div>
-          ${en}
-        </div>
-        <div class="col-target">
-          <div class="timestamp">${curTime} · 实时译文</div>
-          ${zh}
-        </div>
-      `;
-
-      streamContainer.appendChild(card);
-      mainScroller.scrollTop = mainScroller.scrollHeight;
-      updateStatistics();
+      html += `<p class="text-xs text-indigo-300/90 bg-indigo-950/40 border border-indigo-800/40 rounded-lg p-2.5">${spec.hint}</p>`;
+      container.innerHTML = html;
     }
 
-    // 流式打字中（未定稿草稿态）
-    function updateInterim(en, zh = "正在翻译中...") {
-      if (!interimElement) {
-        interimElement = document.createElement('div');
-        interimElement.className = 'lecture-card card-interim';
-        streamContainer.appendChild(interimElement);
-      }
-      const curTime = formatTime(secondsElapsed);
-      interimElement.innerHTML = `
-        <div class="col-source">
-          <div class="timestamp">${curTime} · 实时流输入</div>
-          ${en}
-        </div>
-        <div class="col-target">
-          <div class="timestamp">${curTime} · 同传处理</div>
-          ${zh}
-        </div>
-      `;
-      mainScroller.scrollTop = mainScroller.scrollHeight;
+    function saveSettings() {
+      const pKey = document.getElementById('providerSelect').value;
+      state.provider = pKey;
+      if (!state.configs[pKey]) state.configs[pKey] = {};
+
+      PROVIDERS[pKey].fields.forEach(f => {
+        const el = document.getElementById(`field_${f.key}`);
+        if (el) state.configs[pKey][f.key] = el.value.trim();
+      });
+
+      localStorage.setItem('si_provider', state.provider);
+      localStorage.setItem('si_configs', JSON.stringify(state.configs));
+      updateBadges();
+      closeSettings();
     }
 
-    function updateStatistics() {
-      const cards = streamContainer.querySelectorAll('.lecture-card:not(.card-interim)');
-      let totalChars = 0;
-      cards.forEach(c => totalChars += c.textContent.length);
-      statsSummary.textContent = `已记录: ${cards.length} 句 · 字符数: ${totalChars}`;
-    }
+    // 语音采集与实时识别流水线
+    function initBrowserASR() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) return;
 
-    // 模拟讲座流演示
-    demoBtn.addEventListener('click', () => {
-      if (isSimulating) return;
-      if (isRecording) stopRecording();
+      const rec = new SpeechRecognition();
+      rec.continuous = true;
+      rec.interimResults = true;
 
-      isSimulating = true;
-      demoBtn.disabled = true;
-      statusDot.className = 'dot dot-active';
-      statusLabel.textContent = '讲座演示运行中';
-      startTimer();
-
-      let idx = 0;
-      function nextSentence() {
-        if (idx >= lectureSimulations.length || !isSimulating) {
-          isSimulating = false;
-          demoBtn.disabled = false;
-          statusDot.className = 'dot';
-          statusLabel.textContent = '讲座演示完成';
-          stopTimer();
-          return;
-        }
-
-        const item = lectureSimulations[idx];
-        const words = item.en.split(' ');
-        let curWord = 0;
-
-        const tokenTimer = setInterval(() => {
-          curWord++;
-          updateInterim(words.slice(0, curWord).join(' '));
-          if (curWord >= words.length) {
-            clearInterval(tokenTimer);
-            setTimeout(() => {
-              appendSentence(item.en, item.zh);
-              idx++;
-              setTimeout(nextSentence, 1200);
-            }, 400);
+      rec.onresult = (event) => {
+        let interim = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const text = event.results[i][0].transcript.trim();
+          if (event.results[i].isFinal) {
+            if (text) processSentence(text);
+          } else {
+            interim += text + ' ';
           }
-        }, 120);
-      }
-      nextSentence();
-    });
+        }
+        document.getElementById('streamPreview').textContent = interim || '正在收音...';
+      };
 
-    // 录音与实时识别控制
-    recordBtn.addEventListener('click', async () => {
-      if (isRecording) {
-        stopRecording();
+      rec.onend = () => {
+        if (state.isRunning) {
+          const sel = document.getElementById('sourceLang');
+          rec.lang = sel.options[sel.selectedIndex].getAttribute('data-speech') || 'en-GB';
+          try { rec.start(); } catch (e) {}
+        }
+      };
+
+      state.recognition = rec;
+    }
+
+    function toggleInterpretation() {
+      if (!state.recognition) {
+        alert('请使用 Chrome 或 Edge 浏览器开启实时麦克风收音。');
+        return;
+      }
+      const btn = document.getElementById('toggleRecBtn');
+      const btnText = document.getElementById('recBtnText');
+      const dot = document.getElementById('statusDot');
+      const modeTag = document.getElementById('modeTag');
+
+      if (!state.isRunning) {
+        const sel = document.getElementById('sourceLang');
+        state.recognition.lang = sel.options[sel.selectedIndex].getAttribute('data-speech') || 'en-GB';
+        state.recognition.start();
+        state.isRunning = true;
+
+        btnText.textContent = '停止同传';
+        btn.className = 'flex items-center gap-2 bg-rose-600 hover:bg-rose-500 text-white text-sm font-medium px-4 py-1.5 rounded-lg transition shadow';
+        dot.className = 'w-3 h-3 rounded-full bg-emerald-400 pulse-ring';
+        modeTag.textContent = '实时同传中';
+        modeTag.className = 'px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono';
+        document.getElementById('streamPreview').textContent = '正在监听音频流...';
       } else {
-        startRecording();
-      }
-    });
+        state.isRunning = false;
+        state.recognition.stop();
 
-    async function startRecording() {
-      const provider = document.getElementById('providerSelect').value;
-      const azureKey = localStorage.getItem('azure_speech_key');
-      const azureRegion = localStorage.getItem('azure_speech_region') || 'uksouth';
+        btnText.textContent = '开启同传';
+        btn.className = 'flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-1.5 rounded-lg transition shadow';
+        dot.className = 'w-3 h-3 rounded-full bg-slate-600';
+        modeTag.textContent = '已暂停';
+        modeTag.className = 'px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono';
+      }
+    }
+
+    function triggerManualTranslate() {
+      const input = document.getElementById('quickInput');
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+      processSentence(text);
+    }
+
+    async function processSentence(sourceText) {
+      const id = Date.now() + Math.random().toString(36).slice(2, 6);
+      const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+      const item = { id, time, source: sourceText, target: '' };
+      state.records.push(item);
+      document.getElementById('sentenceCount').textContent = `${state.records.length} 句`;
+
+      // 左栏原文卡片
+      const srcBox = document.createElement('div');
+      srcBox.className = 'bg-slate-900 border border-slate-800 rounded-lg p-3.5 space-y-1';
+      srcBox.innerHTML = `
+        <div class="text-xs text-slate-500 font-mono">${time}</div>
+        <div class="text-slate-100 text-sm leading-relaxed">${escapeHtml(sourceText)}</div>
+      `;
+      const srcList = document.getElementById('sourceList');
+      srcList.appendChild(srcBox);
+      srcList.scrollTop = srcList.scrollHeight;
+
+      // 右栏同传译文卡片
+      const tgtBox = document.createElement('div');
+      tgtBox.className = 'bg-slate-900/60 border border-slate-800/80 rounded-lg p-3.5 space-y-1';
+      tgtBox.innerHTML = `
+        <div class="text-xs text-indigo-400/80 font-mono">${time} · ${PROVIDERS[state.provider].name}</div>
+        <div id="tgt_${id}" class="text-slate-400 text-sm leading-relaxed animate-pulse">同传引擎处理中...</div>
+      `;
+      const tgtList = document.getElementById('targetList');
+      tgtList.appendChild(tgtBox);
+      tgtList.scrollTop = tgtList.scrollHeight;
+
+      const t0 = performance.now();
+      const translated = await dispatchTranslation(sourceText);
+      const dt = Math.round(performance.now() - t0);
+      document.getElementById('latencyBadge').textContent = `延迟: ${dt} ms`;
+
+      item.target = translated;
+      const targetNode = document.getElementById(`tgt_${id}`);
+      if (targetNode) {
+        targetNode.classList.remove('animate-pulse', 'text-slate-400');
+        targetNode.classList.add('text-emerald-50');
+        targetNode.textContent = translated;
+      }
+      tgtList.scrollTop = tgtList.scrollHeight;
+    }
+
+    // 核心路由：按不同平台组装无提示词或专用请求体
+    async function dispatchTranslation(text) {
+      const cfg = state.configs[state.provider] || {};
+      if (!cfg.apiKey) {
+        return '⚠️ 请先点击右上角「接口配置」填入 API Key';
+      }
+
+      const srcLang = document.getElementById('sourceLang').value;
+      const tgtLang = document.getElementById('targetLang').value;
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        setupAudioVisualizer(stream);
+        // 1. 火山引擎 · 同声传译 2.0（无提示词，直接传语言代码与载荷）
+        if (state.provider === 'volc_si2') {
+          // 如果填入的是 HTTP/方舟同传端点，直接发起无 Prompt 请求
+          const endpoint = cfg.endpoint.startsWith('wss://')
+            ? 'https://ark.cn-beijing.volces.com/api/v3/chat/completions'
+            : cfg.endpoint;
 
-        if (provider === 'azure' && azureKey) {
-          // 初始化官方 Azure Speech SDK
-          const translationConfig = SpeechSDK.SpeechTranslationConfig.fromSubscription(azureKey, azureRegion);
-          translationConfig.speechRecognitionLanguage = "en-US";
-          translationConfig.addTargetLanguage("zh-Hans");
-
-          const audioConfig = SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
-          recognizer = new SpeechSDK.TranslationRecognizer(translationConfig, audioConfig);
-
-          recognizer.recognizing = (s, e) => {
-            const zh = e.result.translations.get("zh-Hans") || "...";
-            updateInterim(e.result.text, zh);
-          };
-
-          recognizer.recognized = (s, e) => {
-            if (e.result.text) {
-              const zh = e.result.translations.get("zh-Hans") || "";
-              appendSentence(e.result.text, zh);
-            }
-          };
-
-          recognizer.startContinuousRecognitionAsync(() => {
-            setRecordingUI(true);
-            statusLabel.textContent = 'Azure 云端实时翻译在线';
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${cfg.apiKey}`,
+              'X-Api-Key': cfg.apiKey,
+              'X-Api-Resource-Id': cfg.resourceId || 'volc.service_type.10053'
+            },
+            body: JSON.stringify({
+              model: cfg.model || 'doubao-simultaneous-2.0',
+              source_language: srcLang,
+              target_language: tgtLang,
+              messages: [{ role: 'user', content: text }],
+              temperature: 0.1
+            })
           });
 
-        } else {
-          // 回退至本地 Web Speech API
-          const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-          if (!SpeechRecognition) {
-            alert('当前浏览器未开放 Web Speech，建议填入 Azure Key 或使用 Chrome/Edge 浏览器。');
-            return;
+          if (!res.ok) {
+            const err = await res.text();
+            return `❌ 火山同传接口返回 (${res.status}): ${err.slice(0, 140)}`;
           }
-          recognizer = new SpeechRecognition();
-          recognizer.continuous = true;
-          recognizer.interimResults = true;
-          recognizer.lang = 'en-US';
+          const data = await res.json();
+          return data.translation || data.choices?.[0]?.message?.content?.trim() || JSON.stringify(data);
+        }
 
-          recognizer.onresult = (e) => {
-            let interim = '';
-            for (let i = e.resultIndex; i < e.results.length; ++i) {
-              if (e.results[i].isFinal) {
-                appendSentence(e.results[i][0].transcript, "（正在同步云端中文翻译...）");
-              } else {
-                interim += e.results[i][0].transcript;
-                updateInterim(interim);
+        // 2. 阿里云百炼 · Qwen-MT 专用翻译模型（无提示词，使用官方 translation_options）
+        if (state.provider === 'aliyun_mt') {
+          const langMap = { zh: 'Chinese', en: 'English', ja: 'Japanese' };
+          const res = await fetch(cfg.endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${cfg.apiKey}`
+            },
+            body: JSON.stringify({
+              model: cfg.model || 'qwen-mt-turbo',
+              messages: [{ role: 'user', content: text }],
+              translation_options: {
+                source_lang: langMap[srcLang] || 'auto',
+                target_lang: langMap[tgtLang] || 'Chinese'
               }
-            }
-          };
+            })
+          });
 
-          recognizer.start();
-          setRecordingUI(true);
-          statusLabel.textContent = '浏览器原生听写中';
+          if (!res.ok) {
+            const err = await res.text();
+            return `❌ 阿里云翻译报错 (${res.status}): ${err.slice(0, 140)}`;
+          }
+          const data = await res.json();
+          return data.choices?.[0]?.message?.content?.trim() || '⚠️ 译文为空';
         }
-      } catch (err) {
-        alert('无法访问麦克风: ' + err.message);
-      }
-    }
 
-    function stopRecording() {
-      if (recognizer) {
-        if (recognizer.stopContinuousRecognitionAsync) {
-          recognizer.stopContinuousRecognitionAsync();
-        } else if (recognizer.stop) {
-          recognizer.stop();
+        // 3. OpenAI / DeepSeek 通用接口（后台自动根据语言对映射，无需用户配置提示词）
+        const langName = tgtLang === 'zh' ? '简体中文' : 'English';
+        const res = await fetch(cfg.endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${cfg.apiKey}`
+          },
+          body: JSON.stringify({
+            model: cfg.model,
+            messages: [
+              { role: 'system', content: `Translate directly into ${langName}. Output only the translation.` },
+              { role: 'user', content: text }
+            ],
+            temperature: 0.1
+          })
+        });
+
+        if (!res.ok) {
+          const err = await res.text();
+          return `❌ 接口错误 (${res.status}): ${err.slice(0, 140)}`;
         }
-        recognizer = null;
-      }
-      setRecordingUI(false);
-      statusLabel.textContent = '已暂停听写';
-    }
+        const data = await res.json();
+        return data.choices?.[0]?.message?.content?.trim() || '⚠️ 译文为空';
 
-    function setRecordingUI(active) {
-      isRecording = active;
-      if (active) {
-        recordBtn.classList.add('btn-recording');
-        recordText.textContent = '停止收音';
-        statusDot.className = 'dot dot-active';
-        startTimer();
-      } else {
-        recordBtn.classList.remove('btn-recording');
-        recordText.textContent = '开启收音';
-        statusDot.className = 'dot';
-        stopTimer();
+      } catch (e) {
+        return `❌ 请求失败 (请检查网络或跨域限制): ${e.message}`;
       }
     }
 
-    // 实时检索过滤
-    searchBox.addEventListener('input', (e) => {
-      const q = e.target.value.toLowerCase().trim();
-      const cards = streamContainer.querySelectorAll('.lecture-card');
-      cards.forEach(card => {
-        const text = card.textContent.toLowerCase();
-        card.style.display = text.includes(q) ? '' : 'none';
+    function clearAll() {
+      if (!confirm('确认清空当前同传记录？')) return;
+      state.records = [];
+      document.getElementById('sourceList').innerHTML = '';
+      document.getElementById('targetList').innerHTML = '';
+      document.getElementById('sentenceCount').textContent = '0 句';
+    }
+
+    function exportMarkdown() {
+      if (!state.records.length) return alert('暂无同传记录可导出');
+      let md = `# 实时双语同传记录 (${new Date().toLocaleDateString()})\n\n`;
+      state.records.forEach(r => {
+        md += `**[${r.time}]**\n- 原文: ${r.source}\n- 译文: ${r.target}\n\n`;
       });
-    });
-
-    // 一键导出 Markdown
-    exportMdBtn.addEventListener('click', () => {
-      const cards = streamContainer.querySelectorAll('.lecture-card:not(.card-interim)');
-      let md = `# 课堂实时讲座笔记\n记录日期: ${new Date().toLocaleDateString('zh-CN')}\n时长: ${sessionTimer.textContent}\n\n---\n\n`;
-
-      cards.forEach((card, idx) => {
-        const en = card.querySelector('.col-source')?.innerText.replace(/^[^\n]*\n/, '') || '';
-        const zh = card.querySelector('.col-target')?.innerText.replace(/^[^\n]*\n/, '') || '';
-        if (en.trim()) {
-          md += `### 第 ${idx + 1} 节\n**英文原文**: ${en.trim()}\n\n**中文翻译**: ${zh.trim()}\n\n`;
-        }
-      });
-
-      const blob = new Blob([md], { type: 'text/markdown;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
+      const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
       const a = document.createElement('a');
-      a.href = url;
-      a.download = `课堂讲座笔记_${new Date().toISOString().slice(0,10)}.md`;
+      a.href = URL.createObjectURL(blob);
+      a.download = `si-notes-${new Date().toISOString().slice(0,10)}.md`;
       a.click();
-      URL.revokeObjectURL(url);
-    });
+    }
 
-    // 清空当前记录
-    clearBtn.addEventListener('click', () => {
-      if (confirm('确认清空当前的课堂记录吗？')) {
-        streamContainer.innerHTML = '';
-        secondsElapsed = 0;
-        sessionTimer.textContent = '00:00:00';
-        updateStatistics();
-      }
-    });
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));
+    }
+    function escapeAttr(s) {
+      return String(s).replace(/"/g, '&quot;');
+    }
 
-    // 设置弹窗逻辑
-    configBtn.addEventListener('click', () => {
-      document.getElementById('azureKey').value = localStorage.getItem('azure_speech_key') || '';
-      document.getElementById('azureRegion').value = localStorage.getItem('azure_speech_region') || 'uksouth';
-      configModal.classList.add('active');
-    });
-
-    closeModalBtn.addEventListener('click', () => configModal.classList.remove('active'));
-    cancelConfigBtn.addEventListener('click', () => configModal.classList.remove('active'));
-
-    saveConfigBtn.addEventListener('click', () => {
-      const k = document.getElementById('azureKey').value.trim();
-      const r = document.getElementById('azureRegion').value.trim();
-      if (k) localStorage.setItem('azure_speech_key', k);
-      if (r) localStorage.setItem('azure_speech_region', r);
-      configModal.classList.remove('active');
-      alert('配置已成功保存在本地存储！');
-    });
+    init();
   </script>
 </body>
 </html>
